@@ -1,0 +1,208 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+
+# consigna 
+
+# La empresa TOYCO tiene 3 procesos  de produccion para sus 3 tipos de  juguetes ; trenes , camiones y autos
+# los tiempos de produccion disponibles son 430  , 460  y 420 minutos
+# los ingresos por unidad son $ 3 , $ 2  y $ 5
+# los tiempos de ensable por tren son 1, 3 y 1 minuto y los de camiones 2,0,4 y autos 1 ,2 ,0 minutos
+
+#cargamos librerias 
+library("lpSolveAPI")
+```
+
+
+```{r}
+### problema de TEYCO 3.6.3)###
+
+#1. Creo el problema y defino la FUNCION OBJETIVO
+
+#1.1 Creo el problema : se crea un objeto "LP"
+
+#  la cantidad de variables se define, pero no se definen las restricciones
+TOYCO <- make.lp(nrow = 0, ncol = 3)
+
+
+#1.2 Asigno un nombre al problema 
+name.lp(TOYCO,"TOYCO")
+
+#1.3 Asigno nombres a las variables de decision (columnas)
+colnames(TOYCO) <- c("Trenes", "Camiones","Autos")
+
+#1.4 defino el sentido de la optimizacion ( y opcionalmente, otros parametros)
+# "pivoting" se refiere a la regla de variable de entrada 
+aux <- lp.control(TOYCO, simplextype="primal", sense="max", pivoting="steepestedge")
+
+#1.5 asigno coeficientes de la funcion objetivo
+set.objfn(TOYCO, obj = c(3,2,5))
+
+```
+
+
+```{r}
+#2 restricciones 
+
+#2.1 defino el tipo de variables : real , integer , binary 
+
+set.type(TOYCO,columns = 1:3, type = "real")
+
+#2.2 AGREGO LAS RESTRICCIONES
+
+add.constraint(TOYCO, xt=c(1,2,1), type = "<=" , rhs= 430)
+add.constraint(TOYCO, xt=c(3,0,2), type = "<=" , rhs= 460)
+add.constraint(TOYCO, xt=c(1,4,0), type = "<=" , rhs= 420)
+
+#2.3 defino los limetes de las variables 
+set.bounds(TOYCO, lower = rep(0,3), upper =rep(Inf,3), columns = 1:3)
+
+#2.4 asigno nombres a las restrcciones
+rownames(TOYCO) <- c("Operacion 1", "Operacion 2", "operacion 3")
+```
+
+
+```{r}
+#3 imprimo el problema para chequear
+TOYCO
+```
+
+
+```{r}
+#4 RESUELVO EL PROBLEMA
+
+solve(TOYCO)
+```
+
+
+```{r}
+#5 Obtengo el resultado del objeto "LP"
+
+#5.1 valores optimos de las variables de decision
+
+var.dec. <- matrix(get.variables(TOYCO),1,3)
+
+#5.2 AGREGO NOMBRE a las filas y columnas de la solucion optima 
+
+colnames(var.dec.) <- colnames(TOYCO)
+rownames(var.dec.) <- "producion optima"
+
+#5.3 valor optimo de la funcion objetivo
+
+func.Obj. <- get.objective(TOYCO)
+```
+
+
+```{r}
+
+#6 agrupo el problema y sus resultados en unua lista e imprimo
+
+resultado.TOYCO <-  list(problema=TOYCO , optimo=func.Obj., var.dec.=var.dec.)
+rm(func.Obj.,var.dec.) # elimina los resultados por separados
+
+resultado.TOYCO
+```
+```{r}
+# analisis sensibilidad : lado derecho
+# creacion de tabla de sensibilidad
+
+sensRHS <- matrix(NA,nrow(TOYCO),5)
+rownames(sensRHS) <- rownames(TOYCO)
+colnames(sensRHS) <- c("Holgura","Precio Sombra", "LI rhs","rhs actual","LS rhs")
+
+# obtengo el nivel de holguera de cada restriccion 
+
+sensRHS[,"Holgura"] <- get.rhs(TOYCO)-get.constraints(TOYCO)
+
+# obtengo los precios Sombra
+
+sensRHS[,"Precio Sombra"] <- get.sensitivity.rhs(TOYCO)$duals[1:nrow(TOYCO)]
+
+
+#hacemos un print de la matriz
+print(sensRHS)
+
+```
+```{r}
+
+#Creamos los  intervalos de factibilidad
+# completamos la tabla
+
+sensRHS[,"rhs actual"] <- get.rhs(TOYCO) #valores actuales lado derecho
+
+# completamos limites cuando no hay holgura
+
+# si s=0, toma los valores de la "tabla simplex"
+
+sensRHS[sensRHS[,"Holgura"]==0,"LI rhs"] <- 
+  get.sensitivity.rhs(TOYCO)$dualsfrom[1:nrow(TOYCO)][sensRHS[,"Holgura"]==0]
+                                       sensRHS[sensRHS[,"Holgura"]==0,"LS rhs"]<-
+                                         get.sensitivity.rhs(TOYCO)$dualstill[1:nrow(TOYCO)][sensRHS[,"Holgura"]==0]
+
+# completamos limites cuando no hay holgura
+
+sensRHS[sensRHS[,"Holgura"] > 0,"LI rhs"] <- get.constraints(TOYCO)[sensRHS[,"Holgura"]> 0 ]  
+sensRHS[sensRHS[,"Holgura"] > 0,"LS rhs"] <- Inf
+                                       
+```
+
+```{r}
+# analisis sensibilidad de los coeficientes de la funcion objetivo
+#intervalo de optimalidad
+
+#creamos la tabla de sensibilidad
+
+SensObj <- matrix(NA,ncol(TOYCO),4)
+rownames(SensObj) <- colnames(TOYCO)
+colnames(SensObj) <- c("Min.Coef.Obj","Coef.Obj","Max.Coef.Obj","Precio Reducido")
+
+print(SensObj)
+
+#completamos la tabla de sensibilidad
+
+for (i in 1:ncol(TOYCO)){
+  SensObj[i,"Coef.Obj"] <- get.column(TOYCO,i)$column[1]
+}
+
+rm(i)
+
+# construimos intervalos de optimalidad
+
+# obtengo limite inferior
+
+SensObj[,"Min.Coef.Obj"] <- get.sensitivity.obj(TOYCO)$objfrom
+
+# obtengo limite superior
+
+SensObj[,"Max.Coef.Obj"] <- get.sensitivity.obj(TOYCO)$objtill
+
+print(SensObj)
+
+```
+
+```{r}
+# determinacion de los precios Reducidos
+
+# costos reducidos
+
+SensObj[,"Precio Reducido"]=
+  -get.sensitivity.rhs(TOYCO)$duals[(nrow(TOYCO)+1):(nrow(TOYCO)+ncol(TOYCO))]
+
+
+print(SensObj)
+
+# conclusion 
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
